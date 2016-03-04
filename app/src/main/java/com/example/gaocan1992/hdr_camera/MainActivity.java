@@ -6,7 +6,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
-import android.hardware.Camera;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -19,27 +18,23 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
-import android.net.Uri;
 import android.os.Environment;
 import android.os.HandlerThread;
-import android.provider.MediaStore;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.util.Size;
+import android.util.SparseIntArray;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
-import android.widget.GridLayout;
 import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -48,11 +43,22 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
 
 
 public class MainActivity extends ActionBarActivity {
+
+    private static final long MICRO_SECOND = 1000;
+    private static final long MILLI_SECOND = MICRO_SECOND * 1000;
+    private static final long ONE_SECOND = MILLI_SECOND * 1000;
+
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        ORIENTATIONS.append(Surface.ROTATION_270, 180);
+    }
+
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
     private int mState;
@@ -120,8 +126,10 @@ public class MainActivity extends ActionBarActivity {
                 case STATE_WAIT_LOCK:
                     Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
                     if (afState == CaptureRequest.CONTROL_AF_STATE_FOCUSED_LOCKED) {
-                        unlockFocus();
+                        /* unlockFocus();
                         Toast.makeText(getApplicationContext(), "Focus Lock Successful", Toast.LENGTH_SHORT).show();
+                        */
+                        captureStillImage();
                     }
                     break;
             }
@@ -300,6 +308,10 @@ public class MainActivity extends ActionBarActivity {
             mCameraDevice.close();
             mCameraDevice = null;
         }
+        if (mImageReader != null) {
+            mImageReader.close();
+            mImageReader = null;
+        }
     }
 
     private void createCameraPreviewSession() {
@@ -309,7 +321,7 @@ public class MainActivity extends ActionBarActivity {
             Surface previewSurface = new Surface(surfaceTexture);
             mPreviewCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewCaptureRequestBuilder.addTarget(previewSurface);
-            mCameraDevice.createCaptureSession(Arrays.asList(previewSurface),
+            mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(CameraCaptureSession session) {
@@ -385,6 +397,42 @@ public class MainActivity extends ActionBarActivity {
         }
     }
 
+    private void captureStillImage() {
+        try {
+            CaptureRequest.Builder captureStillBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            captureStillBuilder.addTarget(mImageReader.getSurface());
+
+            int rotation = getWindowManager().getDefaultDisplay().getRotation();
+            captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION,
+                    ORIENTATIONS.get(rotation));
+            CameraCaptureSession.CaptureCallback captureCallback =
+                    new CameraCaptureSession.CaptureCallback() {
+                        @Override
+                        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                            super.onCaptureCompleted(session, request, result);
+                            Toast.makeText(getApplicationContext(),
+                                    "Image Captured!", Toast.LENGTH_SHORT).show();
+                            unlockFocus();
+                        }
+                    };
+//            List<CaptureRequest> list = new ArrayList<CaptureRequest>();
+//            list.add(captureStillBuilder.build());
+//            list.add(captureStillBuilder.build());
+//            mCameraCaptureSession.captureBurst(
+//                    list, captureCallback, null
+//            );
+            captureStillBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
+            captureStillBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
+            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 10);
+
+            mCameraCaptureSession.capture(
+                    captureStillBuilder.build(), captureCallback, null
+            );
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
 
 
 
