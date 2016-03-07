@@ -22,6 +22,7 @@ import android.os.Environment;
 import android.os.HandlerThread;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Menu;
@@ -31,6 +32,16 @@ import android.view.TextureView;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.Toast;
+
+
+import org.opencv.core.Mat;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.photo.CalibrateDebevec;
+import org.opencv.photo.MergeDebevec;
+import org.opencv.photo.Photo;
+import org.opencv.photo.Tonemap;
+import org.opencv.utils.Converters;
+
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -62,9 +73,18 @@ public class MainActivity extends ActionBarActivity {
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
     private int mState;
+
     private ImageView mImagePhotoView;
     private String mImageLocation;
-    private static final int ACTIVITY_START_CAMERA_APP = 200;
+    private static File mImageFile;
+    private static File mImageFile2;
+
+
+    private static List<String> mImageFileNameList;
+    private static List<Float> mExposureTimeList;
+
+    private static File mHDRImageFile;
+
     private TextureView mTextureView;
     private Size mPreviewSize;
     private String mCameraId;
@@ -98,7 +118,6 @@ public class MainActivity extends ActionBarActivity {
         public void onOpened(CameraDevice camera) {
             mCameraDevice = camera;
             createCameraPreviewSession();
-//            Toast.makeText(getApplicationContext(), "Camera Opened!", Toast.LENGTH_SHORT).show();
         }
 
         @Override
@@ -126,9 +145,6 @@ public class MainActivity extends ActionBarActivity {
                 case STATE_WAIT_LOCK:
                     Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
                     if (afState == CaptureRequest.CONTROL_AF_STATE_FOCUSED_LOCKED) {
-                        /* unlockFocus();
-                        Toast.makeText(getApplicationContext(), "Focus Lock Successful", Toast.LENGTH_SHORT).show();
-                        */
                         captureStillImage();
                     }
                     break;
@@ -154,7 +170,10 @@ public class MainActivity extends ActionBarActivity {
     };
     private HandlerThread mBackgroundThread;
     private android.os.Handler mBackgroundHandler;
-    private static File mImageFile;
+
+    /**
+     * ImageReader & ImageSaver
+     */
     private ImageReader mImageReader;
     private final ImageReader.OnImageAvailableListener mOnImageAvailableListener =
             new ImageReader.OnImageAvailableListener() {
@@ -165,11 +184,34 @@ public class MainActivity extends ActionBarActivity {
                 }
             };
 
+//    private ImageReader mImageReader2;
+//    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener2 =
+//            new ImageReader.OnImageAvailableListener() {
+//
+//                @Override
+//                public void onImageAvailable(ImageReader reader) {
+//                    mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mImageFile2));
+//                }
+//            };
+
+
+
     private static class ImageSaver implements Runnable {
         private final Image mImage;
+
         private ImageSaver(Image image) {
             mImage = image;
+
         }
+
+        private File createNewImageFile() throws IOException {
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            String imageFileName = "IMG_" + timeStamp;
+            File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM + "/Camera");
+            File image = File.createTempFile(imageFileName, ".jpg", storageDirectory);
+            return image;
+        }
+
         @Override
         public void run() {
             ByteBuffer byteBuffer = mImage.getPlanes()[0].getBuffer();
@@ -179,8 +221,18 @@ public class MainActivity extends ActionBarActivity {
             FileOutputStream fileOutputStream = null;
 
             try {
-                fileOutputStream = new FileOutputStream(mImageFile);
+                File newFile = null;
+                try {
+                    newFile = createNewImageFile();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                fileOutputStream = new FileOutputStream(newFile);
                 fileOutputStream.write(bytes);
+
+                mImageFileNameList.add(newFile.getName());
+
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
@@ -196,39 +248,71 @@ public class MainActivity extends ActionBarActivity {
         }
     }
 
+//    private static class ImageSaver implements Runnable {
+//        private final Image mImage;
+//        private final File mFile;
+//        private ImageSaver(Image image, File file) {
+//            mImage = image;
+//            mFile = file;
+//        }
+//
+//        @Override
+//        public void run() {
+//            ByteBuffer byteBuffer = mImage.getPlanes()[0].getBuffer();
+//            byte[] bytes = new byte[byteBuffer.remaining()];
+//            byteBuffer.get(bytes);
+//
+//            FileOutputStream fileOutputStream = null;
+//
+//            try {
+//
+//                fileOutputStream = new FileOutputStream(mFile);
+//                fileOutputStream.write(bytes);
+//
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            } finally {
+//                mImage.close();
+//                if (fileOutputStream != null) {
+//                    try {
+//                        fileOutputStream.close();
+//                    } catch (IOException e) {
+//                        e.printStackTrace();
+//                    }
+//                }
+//            }
+//        }
+//    }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-//        mImagePhotoView = (ImageView) findViewById(R.id.image_view);
         mTextureView = (TextureView) findViewById(R.id.texture_view);
     }
 
     public void takePhoto(View view) {
-        try {
-            mImageFile = createImageFile();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+//        try {
+//            mImageFile = createImageFile();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//        try {
+//            mImageFile2 = createImageFile();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
         lockFocus();
     }
 
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == ACTIVITY_START_CAMERA_APP && resultCode == RESULT_OK) {
-            Bitmap photoBitmap = BitmapFactory.decodeFile(mImageLocation);
-            mImagePhotoView.setImageBitmap(photoBitmap);
-        }
-    }
+//    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+//        if (requestCode == ACTIVITY_START_CAMERA_APP && resultCode == RESULT_OK) {
+//            Bitmap photoBitmap = BitmapFactory.decodeFile(mImageLocation);
+//            mImagePhotoView.setImageBitmap(photoBitmap);
+//        }
+//    }
 
-    private File createImageFile() throws IOException {
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "IMG_" + timeStamp;
-        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM + "/Camera");
-        File image = File.createTempFile(imageFileName, ".jpg", storageDirectory);
-        mImageLocation = image.getAbsolutePath();
-        return image;
-    }
 
     private void setupCamera(int width, int height) {
         CameraManager cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -250,11 +334,18 @@ public class MainActivity extends ActionBarActivity {
                             }
                         }
                 );
+
                 mImageReader = ImageReader.newInstance(largestImageSize.getWidth(),
                         largestImageSize.getHeight(),
                         ImageFormat.JPEG, 1);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener,
                         mBackgroundHandler);
+
+//                mImageReader2 = ImageReader.newInstance(largestImageSize.getWidth(),
+//                        largestImageSize.getHeight(),
+//                        ImageFormat.JPEG, 1);
+//                mImageReader2.setOnImageAvailableListener(mOnImageAvailableListener2,
+//                        mBackgroundHandler);
 
                 mPreviewSize = getPreferredPreviewSize(map.getOutputSizes(SurfaceTexture.class), width, height);
                 mCameraId = cameraId;
@@ -312,6 +403,10 @@ public class MainActivity extends ActionBarActivity {
             mImageReader.close();
             mImageReader = null;
         }
+//        if (mImageReader2 != null) {
+//            mImageReader2.close();
+//            mImageReader2 = null;
+//        }
     }
 
     private void createCameraPreviewSession() {
@@ -402,39 +497,91 @@ public class MainActivity extends ActionBarActivity {
             CaptureRequest.Builder captureStillBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureStillBuilder.addTarget(mImageReader.getSurface());
 
+            CaptureRequest.Builder captureStillBuilder2 = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            captureStillBuilder2.addTarget(mImageReader.getSurface());
+
             int rotation = getWindowManager().getDefaultDisplay().getRotation();
+
             captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION,
                     ORIENTATIONS.get(rotation));
+            captureStillBuilder2.set(CaptureRequest.JPEG_ORIENTATION,
+                    ORIENTATIONS.get(rotation));
+
             CameraCaptureSession.CaptureCallback captureCallback =
                     new CameraCaptureSession.CaptureCallback() {
+
                         @Override
                         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
                             super.onCaptureCompleted(session, request, result);
-                            Toast.makeText(getApplicationContext(),
-                                    "Image Captured!", Toast.LENGTH_SHORT).show();
+//                            Toast.makeText(getApplicationContext(),
+//                                    "Image Captured!", Toast.LENGTH_SHORT).show();
+                            List<CaptureResult> list = result.getPartialResults();
+                            for (CaptureResult cr : list) {
+                                long time = cr.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+                                float inverseTime = (float) (1 / time);
+                                mExposureTimeList.add(inverseTime);
+                            }
+                            hdrProcess();
                             unlockFocus();
                         }
                     };
-//            List<CaptureRequest> list = new ArrayList<CaptureRequest>();
-//            list.add(captureStillBuilder.build());
-//            list.add(captureStillBuilder.build());
-//            mCameraCaptureSession.captureBurst(
-//                    list, captureCallback, null
-//            );
+
+            List<CaptureRequest> list = new ArrayList<>();
+
             captureStillBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
             captureStillBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
-            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 10);
+            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 100);
 
-            mCameraCaptureSession.capture(
-                    captureStillBuilder.build(), captureCallback, null
-            );
+            captureStillBuilder2.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
+            captureStillBuilder2.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
+            captureStillBuilder2.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 20);
+
+
+            list.add(captureStillBuilder.build());
+            list.add(captureStillBuilder2.build());
+
+            mCameraCaptureSession.stopRepeating();
+            mCameraCaptureSession.captureBurst(list, captureCallback, null);
+
+
+
+//            mCameraCaptureSession.capture(
+//                    captureStillBuilder.build(), captureCallback, null
+//            );
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
+    private void hdrProcess() {
+        List<Mat> images = new ArrayList<>();
+        for (String name : mImageFileNameList) {
+            images.add(Imgcodecs.imread(name));
+        }
+        Mat times = Converters.vector_float_to_Mat(mExposureTimeList);
+        Mat response = new Mat();
+        CalibrateDebevec calibrate = Photo.createCalibrateDebevec();
+        calibrate.process(images, response, times);
 
+        Mat hdr = new Mat();
+        MergeDebevec mergeDebevec = Photo.createMergeDebevec();
+        mergeDebevec.process(images, hdr, times, response);
+
+        Mat ldr = new Mat();
+        Tonemap tonemap = Photo.createTonemap(2.2f);
+        tonemap.process(hdr, ldr);
+
+        Imgcodecs.imwrite("ldr.jpg", ldr);
+    }
+
+    private File createImageFile() throws IOException {
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "LDR_IMG_" + timeStamp;
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM + "/Camera");
+        File image = File.createTempFile(imageFileName, ".jpg", storageDirectory);
+        return image;
+    }
 
     @Override
     protected void onResume() {
@@ -480,4 +627,5 @@ public class MainActivity extends ActionBarActivity {
 
         return super.onOptionsItemSelected(item);
     }
+
 }
