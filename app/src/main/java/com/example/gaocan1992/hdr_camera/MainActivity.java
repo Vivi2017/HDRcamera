@@ -1,9 +1,6 @@
 package com.example.gaocan1992.hdr_camera;
 
 import android.content.Context;
-import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -30,14 +27,18 @@ import android.view.MenuItem;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
-import android.widget.ImageView;
 import android.widget.Toast;
 
 
+import org.opencv.android.BaseLoaderCallback;
+import org.opencv.android.LoaderCallbackInterface;
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.photo.CalibrateDebevec;
 import org.opencv.photo.MergeDebevec;
+import org.opencv.photo.MergeMertens;
 import org.opencv.photo.Photo;
 import org.opencv.photo.Tonemap;
 import org.opencv.utils.Converters;
@@ -53,6 +54,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 
 
@@ -74,16 +76,11 @@ public class MainActivity extends ActionBarActivity {
     private static final int STATE_WAIT_LOCK = 1;
     private int mState;
 
-    private ImageView mImagePhotoView;
-    private String mImageLocation;
-    private static File mImageFile;
-    private static File mImageFile2;
-
-
-    private static List<String> mImageFileNameList;
+    private static List<File> mImageFileList;
     private static List<Float> mExposureTimeList;
 
     private static File mHDRImageFile;
+    private static File mFusionImageFile;
 
     private TextureView mTextureView;
     private Size mPreviewSize;
@@ -184,18 +181,6 @@ public class MainActivity extends ActionBarActivity {
                 }
             };
 
-//    private ImageReader mImageReader2;
-//    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener2 =
-//            new ImageReader.OnImageAvailableListener() {
-//
-//                @Override
-//                public void onImageAvailable(ImageReader reader) {
-//                    mBackgroundHandler.post(new ImageSaver(reader.acquireNextImage(), mImageFile2));
-//                }
-//            };
-
-
-
     private static class ImageSaver implements Runnable {
         private final Image mImage;
 
@@ -207,7 +192,7 @@ public class MainActivity extends ActionBarActivity {
         private File createNewImageFile() throws IOException {
             String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
             String imageFileName = "IMG_" + timeStamp;
-            File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM + "/Camera");
+            File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
             File image = File.createTempFile(imageFileName, ".jpg", storageDirectory);
             return image;
         }
@@ -231,7 +216,7 @@ public class MainActivity extends ActionBarActivity {
                 fileOutputStream = new FileOutputStream(newFile);
                 fileOutputStream.write(bytes);
 
-                mImageFileNameList.add(newFile.getName());
+                mImageFileList.add(newFile);
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -248,71 +233,30 @@ public class MainActivity extends ActionBarActivity {
         }
     }
 
-//    private static class ImageSaver implements Runnable {
-//        private final Image mImage;
-//        private final File mFile;
-//        private ImageSaver(Image image, File file) {
-//            mImage = image;
-//            mFile = file;
-//        }
-//
-//        @Override
-//        public void run() {
-//            ByteBuffer byteBuffer = mImage.getPlanes()[0].getBuffer();
-//            byte[] bytes = new byte[byteBuffer.remaining()];
-//            byteBuffer.get(bytes);
-//
-//            FileOutputStream fileOutputStream = null;
-//
-//            try {
-//
-//                fileOutputStream = new FileOutputStream(mFile);
-//                fileOutputStream.write(bytes);
-//
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            } finally {
-//                mImage.close();
-//                if (fileOutputStream != null) {
-//                    try {
-//                        fileOutputStream.close();
-//                    } catch (IOException e) {
-//                        e.printStackTrace();
-//                    }
-//                }
-//            }
-//        }
-//    }
-
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mTextureView = (TextureView) findViewById(R.id.texture_view);
+        mImageFileList = new ArrayList<>();
+        mExposureTimeList = new ArrayList<>();
     }
+
+    private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
+        @Override
+        public void onManagerConnected(int status) {
+            if (status == LoaderCallbackInterface.SUCCESS ) {
+                // now we can call opencv code !
+
+            } else {
+                super.onManagerConnected(status);
+            }
+        }
+    };
 
     public void takePhoto(View view) {
-//        try {
-//            mImageFile = createImageFile();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        try {
-//            mImageFile2 = createImageFile();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
         lockFocus();
     }
-
-//    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-//        if (requestCode == ACTIVITY_START_CAMERA_APP && resultCode == RESULT_OK) {
-//            Bitmap photoBitmap = BitmapFactory.decodeFile(mImageLocation);
-//            mImagePhotoView.setImageBitmap(photoBitmap);
-//        }
-//    }
-
 
     private void setupCamera(int width, int height) {
         CameraManager cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -340,12 +284,6 @@ public class MainActivity extends ActionBarActivity {
                         ImageFormat.JPEG, 1);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener,
                         mBackgroundHandler);
-
-//                mImageReader2 = ImageReader.newInstance(largestImageSize.getWidth(),
-//                        largestImageSize.getHeight(),
-//                        ImageFormat.JPEG, 1);
-//                mImageReader2.setOnImageAvailableListener(mOnImageAvailableListener2,
-//                        mBackgroundHandler);
 
                 mPreviewSize = getPreferredPreviewSize(map.getOutputSizes(SurfaceTexture.class), width, height);
                 mCameraId = cameraId;
@@ -403,10 +341,6 @@ public class MainActivity extends ActionBarActivity {
             mImageReader.close();
             mImageReader = null;
         }
-//        if (mImageReader2 != null) {
-//            mImageReader2.close();
-//            mImageReader2 = null;
-//        }
     }
 
     private void createCameraPreviewSession() {
@@ -497,14 +431,8 @@ public class MainActivity extends ActionBarActivity {
             CaptureRequest.Builder captureStillBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureStillBuilder.addTarget(mImageReader.getSurface());
 
-            CaptureRequest.Builder captureStillBuilder2 = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-            captureStillBuilder2.addTarget(mImageReader.getSurface());
-
             int rotation = getWindowManager().getDefaultDisplay().getRotation();
-
             captureStillBuilder.set(CaptureRequest.JPEG_ORIENTATION,
-                    ORIENTATIONS.get(rotation));
-            captureStillBuilder2.set(CaptureRequest.JPEG_ORIENTATION,
                     ORIENTATIONS.get(rotation));
 
             CameraCaptureSession.CaptureCallback captureCallback =
@@ -512,16 +440,11 @@ public class MainActivity extends ActionBarActivity {
 
                         @Override
                         public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                            long exposureTime = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+                            float time = (float) exposureTime / 1000000000;
+                            mExposureTimeList.add(time);
                             super.onCaptureCompleted(session, request, result);
-//                            Toast.makeText(getApplicationContext(),
-//                                    "Image Captured!", Toast.LENGTH_SHORT).show();
-                            List<CaptureResult> list = result.getPartialResults();
-                            for (CaptureResult cr : list) {
-                                long time = cr.get(CaptureResult.SENSOR_EXPOSURE_TIME);
-                                float inverseTime = (float) (1 / time);
-                                mExposureTimeList.add(inverseTime);
-                            }
-                            hdrProcess();
+
                             unlockFocus();
                         }
                     };
@@ -530,36 +453,54 @@ public class MainActivity extends ActionBarActivity {
 
             captureStillBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
             captureStillBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
-            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 100);
 
-            captureStillBuilder2.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
-            captureStillBuilder2.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_OFF);
-            captureStillBuilder2.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 20);
-
-
+            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 50);
             list.add(captureStillBuilder.build());
-            list.add(captureStillBuilder2.build());
+            captureStillBuilder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, ONE_SECOND / 5);
+            list.add(captureStillBuilder.build());
 
-            mCameraCaptureSession.stopRepeating();
             mCameraCaptureSession.captureBurst(list, captureCallback, null);
-
-
-
-//            mCameraCaptureSession.capture(
-//                    captureStillBuilder.build(), captureCallback, null
-//            );
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
+    public void makeHDR(View view) {
+        hdrProcess();
+    }
+
     private void hdrProcess() {
-        List<Mat> images = new ArrayList<>();
-        for (String name : mImageFileNameList) {
-            images.add(Imgcodecs.imread(name));
+        if (mExposureTimeList == null || mExposureTimeList.isEmpty()
+                || mImageFileList == null || mImageFileList.isEmpty()) {
+            return;
         }
-        Mat times = Converters.vector_float_to_Mat(mExposureTimeList);
+        HashSet<Float> set = new HashSet<>();
+        List<File> fileList = new ArrayList<>();
+        List<File> deleteFileList = new ArrayList<>();
+        List<Float> timeList = new ArrayList<>();
+
+        for (int i = 0; i < mExposureTimeList.size(); i++) {
+            if (set.contains(mExposureTimeList.get(i))) {
+                deleteFileList.add(mImageFileList.get(i));
+            } else {
+                timeList.add(mExposureTimeList.get(i));
+                set.add(mExposureTimeList.get(i));
+                fileList.add(mImageFileList.get(i));
+            }
+        }
+        List<Mat> images = new ArrayList<>();
+
+        for (File file : fileList) {
+            Log.i("File Name: ", file.getName());
+            images.add(Imgcodecs.imread(file.getAbsolutePath(), Imgcodecs.CV_LOAD_IMAGE_COLOR));
+        }
+
+        for (Float time : timeList) {
+            Log.i("Exposure Time: ", String.valueOf(time));
+        }
+
+        Mat times = Converters.vector_float_to_Mat(timeList);
         Mat response = new Mat();
         CalibrateDebevec calibrate = Photo.createCalibrateDebevec();
         calibrate.process(images, response, times);
@@ -572,13 +513,41 @@ public class MainActivity extends ActionBarActivity {
         Tonemap tonemap = Photo.createTonemap(2.2f);
         tonemap.process(hdr, ldr);
 
-        Imgcodecs.imwrite("ldr.jpg", ldr);
+        Mat fusion = new Mat();
+        MergeMertens mergeMertens = Photo.createMergeMertens();
+        mergeMertens.process(images, fusion);
+
+        try {
+            mHDRImageFile = createImageFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            mFusionImageFile = createImageFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        Mat ldr8bit = new Mat();
+        ldr.convertTo(ldr8bit, CvType.CV_8U, 255);
+        Imgcodecs.imwrite(mHDRImageFile.getAbsolutePath(), ldr8bit);
+
+        Mat fusion8bit = new Mat();
+        fusion.convertTo(fusion8bit, CvType.CV_8U, 255);
+        Imgcodecs.imwrite(mFusionImageFile.getAbsolutePath(), fusion8bit);
+
+        mExposureTimeList = new ArrayList<>();
+        mImageFileList = new ArrayList<>();
+        for (File file : deleteFileList) {
+            file.delete();
+        }
     }
 
     private File createImageFile() throws IOException {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "LDR_IMG_" + timeStamp;
-        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM + "/Camera");
+        String imageFileName = "HDR_IMG_" + timeStamp;
+        File storageDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
         File image = File.createTempFile(imageFileName, ".jpg", storageDirectory);
         return image;
     }
@@ -586,6 +555,7 @@ public class MainActivity extends ActionBarActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_1_0, this, mLoaderCallback);
 
         openBackgroundThread();
 

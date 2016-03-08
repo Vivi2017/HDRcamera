@@ -11,13 +11,6 @@
         android:layout_alignParentBottom="true"
         />
 
-    <ImageView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_above="@+id/photo_button"
-        android:id="@+id/image_view"
-        />
-
     <Button android:text="@string/take_photo"
         style="@style/Base.Theme.AppCompat.Light.DarkActionBar"
         android:layout_width="wrap_content"
@@ -25,6 +18,18 @@
         android:id="@+id/photo_button"
         android:onClick="takePhoto"
         android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"/>
+        android:layout_centerHorizontal="true"
+        />
+
+    <Button android:text="Make HDR"
+        style="@style/Base.Theme.AppCompat.Light.DarkActionBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/hdr_button"
+        android:onClick="makeHDR"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentBottom="true"
+        />
+
 
 </RelativeLayout>
